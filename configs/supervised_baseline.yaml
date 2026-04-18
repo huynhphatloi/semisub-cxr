@@ -1,0 +1,51 @@
+experiment_name: "supervised_baseline_5pct_seed42"
+setting: "supervised"
+
+data:
+  dataset_path: "/content/drive/MyDrive/chexpert"
+  train_csv: "CheXpert-v1.0-small/train.csv"
+  valid_csv: "CheXpert-v1.0-small/valid.csv"
+  label_set: ["Cardiomegaly", "Pleural Effusion", "Pneumothorax", "Consolidation", "Atelectasis", "Edema"]
+  uncertain_policy: "zeros"
+  view_policy: "frontal_only"
+  image_size: 224
+  num_workers: 2
+
+split:
+  labeled_ratio: 0.05
+  seed: 42
+  splits_dir: "/content/drive/MyDrive/outputs/splits"
+  min_positive_per_class: 1
+
+model:
+  backbone: "resnet50_imagenet"
+  pretrained_weights_path: null
+  num_classes: 6
+  dropout_rate: 0.5
+  normalization_mean: [0.485, 0.456, 0.406]
+  normalization_std: [0.229, 0.224, 0.225]
+
+training:
+  learning_rate: 0.0001
+  batch_size: 32
+  num_epochs: 30
+  optimizer: "adam"
+  weight_decay: 0.0001
+  scheduler: "cosine"
+  resume_checkpoint: null
+
+pseudo_label:
+  enabled: false
+  confidence_thresholds: {}
+  pseudo_label_policy: "positive_only"
+  student_init: "from_scratch"
+  student_pretrained_weights_path: null
+
+uncertainty:
+  enabled: false
+  mc_dropout_passes: 20
+  uncertainty_metric: "predictive_entropy"
+  uncertainty_thresholds: {}
+
+output_dir: "/content/drive/MyDrive/outputs"
+optional_metrics: []
