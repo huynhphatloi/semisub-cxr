@@ -168,12 +168,29 @@ def main(argv=None):
     )
     logger.info("Inference complete: %d samples", len(sample_indices))
 
+    # Run MC Dropout if uncertainty filtering is enabled
+    uncertainties = None
+    if config.uncertainty.enabled:
+        from src.pseudo_labeling.mc_dropout import run_mc_dropout_inference
+        logger.info(
+            "Running MC Dropout uncertainty estimation (%d passes)...",
+            config.uncertainty.mc_dropout_passes,
+        )
+        sample_indices, probabilities, uncertainties = run_mc_dropout_inference(
+            model=model,
+            dataloader=unlabeled_loader,
+            device=device,
+            num_passes=config.uncertainty.mc_dropout_passes,
+            uncertainty_metric=config.uncertainty.uncertainty_metric,
+        )
+        logger.info("MC Dropout complete.")
+
     # Apply threshold strategy
     class_names = config.data.label_set
     strategy = create_threshold_strategy(config)
     pseudo_labels, rejection_mask = strategy.accept(
         probabilities=probabilities,
-        uncertainties=None,
+        uncertainties=uncertainties,
         class_names=class_names,
     )
 
