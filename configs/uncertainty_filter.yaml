@@ -3,8 +3,8 @@ setting: "uncertainty_filter"
 
 data:
   dataset_path: "/content/drive/MyDrive/chexpert"
-  train_csv: "CheXpert-v1.0-small/train.csv"
-  valid_csv: "CheXpert-v1.0-small/valid.csv"
+  train_csv: "train.csv"
+  valid_csv: "valid.csv"
   label_set: ["Cardiomegaly", "Pleural Effusion", "Pneumothorax", "Consolidation", "Atelectasis", "Edema"]
   uncertain_policy: "zeros"
   view_policy: "frontal_only"
