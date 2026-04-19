@@ -53,6 +53,7 @@ def build_teacher_model(
         dropout_rate=config.model.dropout_rate,
     )
     load_checkpoint(checkpoint_path, model, device=str(device))
+    model = model.to(device)
     logger.info("Loaded teacher model from %s", checkpoint_path)
     return model
 
