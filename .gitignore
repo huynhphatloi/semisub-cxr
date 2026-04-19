@@ -49,7 +49,7 @@ Thumbs.db
 *.ckpt
 *.npy
 *.npz
-data/
+/data/
 checkpoints/
 outputs/
 logs/
