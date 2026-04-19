@@ -2,7 +2,7 @@ experiment_name: "lvmmed_finetune_5pct_seed42"
 setting: "lvmmed"
 
 data:
-  dataset_path: "/content/drive/MyDrive/chexpert"
+  dataset_path: "/content/drive/MyDrive/Projects/data/chest/kaggle/CheXpert-v1.0-small"
   train_csv: "train.csv"
   valid_csv: "valid.csv"
   label_set: ["Cardiomegaly", "Pleural Effusion", "Pneumothorax", "Consolidation", "Atelectasis", "Edema"]
@@ -14,7 +14,7 @@ data:
 split:
   labeled_ratio: 0.05
   seed: 42
-  splits_dir: "/content/drive/MyDrive/outputs/splits"
+  splits_dir: "/content/drive/MyDrive/Projects/semisub-cxr/outputs/splits"
   min_positive_per_class: 1
 
 model:
@@ -47,5 +47,5 @@ uncertainty:
   uncertainty_metric: "predictive_entropy"
   uncertainty_thresholds: {}
 
-output_dir: "/content/drive/MyDrive/outputs"
+output_dir: "/content/drive/MyDrive/Projects/semisub-cxr/outputs"
 optional_metrics: []
