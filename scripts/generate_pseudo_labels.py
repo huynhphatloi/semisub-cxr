@@ -152,7 +152,7 @@ def main(argv=None):
     logger.info("Loaded config: %s", config.experiment_name)
 
     set_all_seeds(config.split.seed)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     logger.info("Using device: %s", device)
 
     # Build teacher model

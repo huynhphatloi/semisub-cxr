@@ -9,6 +9,7 @@ Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5, 3A.1–3A.6, 12.4, 14.3
 
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
@@ -81,15 +82,50 @@ class Trainer:
     def train(self) -> TrainResult:
         """Run the full training loop with epoch-level logging and checkpointing."""
         num_epochs = self.config.training.num_epochs
+        total_batches = len(self.train_loader)
+        val_batches = len(self.val_loader)
+
+        logger.info(
+            "Starting training: %d epochs, %d train batches/epoch, "
+            "%d val batches/epoch, device=%s",
+            num_epochs, total_batches, val_batches, self.device,
+        )
+
+        train_start = time.time()
 
         for epoch in range(self.start_epoch, num_epochs):
+            epoch_start = time.time()
             train_loss = self._train_epoch(epoch)
+            train_time = time.time() - epoch_start
+
+            val_start = time.time()
             val_metrics = self._validate(epoch)
+            val_time = time.time() - val_start
+
             self._log_epoch(epoch, train_loss, val_metrics)
             self._save_checkpoint(epoch, val_metrics)
 
             if self.scheduler is not None:
                 self.scheduler.step()
+
+            elapsed = time.time() - train_start
+            remaining = elapsed / (epoch - self.start_epoch + 1) * (
+                num_epochs - epoch - 1
+            )
+            logger.info(
+                "  [%d/%d] train=%.0fs val=%.0fs | "
+                "elapsed=%.0fs ETA=%.0fs (%.1fmin)",
+                epoch + 1, num_epochs, train_time, val_time,
+                elapsed, remaining, remaining / 60,
+            )
+
+        total_time = time.time() - train_start
+        logger.info(
+            "Training complete in %.1fs (%.1fmin). "
+            "Best epoch=%d, best_macro_auroc=%.4f",
+            total_time, total_time / 60,
+            self.best_epoch, self.best_macro_auroc,
+        )
 
         return TrainResult(
             best_epoch=self.best_epoch,
@@ -155,9 +191,10 @@ class Trainer:
         """Single training epoch: forward, masked BCE loss, backward."""
         self.model.train()
         total_loss = 0.0
-        num_batches = 0
+        num_batches = len(self.train_loader)
+        log_interval = max(1, num_batches // 10)  # Log ~10 times per epoch
 
-        for batch in self.train_loader:
+        for batch_idx, batch in enumerate(self.train_loader):
             images, labels, loss_mask = self._unpack_batch(batch)
             images = images.to(self.device)
             labels = labels.to(self.device)
@@ -172,7 +209,14 @@ class Trainer:
             self.optimizer.step()
 
             total_loss += loss.item()
-            num_batches += 1
+
+            if (batch_idx + 1) % log_interval == 0 or (batch_idx + 1) == num_batches:
+                pct = 100.0 * (batch_idx + 1) / num_batches
+                avg_loss = total_loss / (batch_idx + 1)
+                logger.info(
+                    "  Epoch %d train: [%d/%d] %5.1f%% | loss=%.6f",
+                    epoch, batch_idx + 1, num_batches, pct, avg_loss,
+                )
 
         return total_loss / max(num_batches, 1)
 
@@ -195,15 +239,18 @@ class Trainer:
         self.model.eval()
         all_labels = []
         all_probs = []
+        num_batches = len(self.val_loader)
 
         with torch.no_grad():
-            for batch in self.val_loader:
+            for batch_idx, batch in enumerate(self.val_loader):
                 images, labels = batch[0], batch[1]
                 images = images.to(self.device)
                 logits = self.model(images)
                 probs = torch.sigmoid(logits)
                 all_labels.append(labels.cpu().numpy())
                 all_probs.append(probs.cpu().numpy())
+
+        logger.info("  Epoch %d val: %d batches done", epoch, num_batches)
 
         y_true = np.concatenate(all_labels, axis=0)
         y_score = np.concatenate(all_probs, axis=0)
@@ -234,12 +281,14 @@ class Trainer:
     def _log_epoch(
         self, epoch: int, train_loss: float, val_metrics: Dict[str, Any]
     ) -> None:
+        macro = val_metrics["macro_auroc"]
+        is_best = "★ NEW BEST" if macro >= self.best_macro_auroc else ""
         logger.info(
-            "Epoch %d — train_loss=%.6f  val_macro_auroc=%.4f",
-            epoch,
-            train_loss,
-            val_metrics["macro_auroc"],
+            "Epoch %d — train_loss=%.6f  val_macro_auroc=%.4f  %s",
+            epoch, train_loss, macro, is_best,
         )
+        for name, auc in val_metrics["per_class_auroc"].items():
+            logger.info("    %s: %.4f", name, auc)
 
     def _save_checkpoint(
         self, epoch: int, val_metrics: Dict[str, Any]

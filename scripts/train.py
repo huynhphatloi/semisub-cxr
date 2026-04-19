@@ -20,10 +20,12 @@ from torch.utils.data import DataLoader, Subset
 
 from src.config import ExperimentConfig, load_config
 from src.data.chexpert_dataset import CheXpertDataset
+from src.data.combined_dataset import CombinedDataset
 from src.data.split_generator import generate_split
 from src.data.transforms import get_eval_transform, get_train_transform
 from src.models.backbone_factory import create_backbone
 from src.models.classifier import MultiLabelClassifier
+from src.pseudo_labeling.artifact_io import load_pseudo_label_artifact
 from src.training.trainer import Trainer
 from src.utils.sanity_checks import check_training_step
 from src.utils.seed import set_all_seeds
@@ -47,6 +49,10 @@ def build_model(config: ExperimentConfig) -> MultiLabelClassifier:
 
 def build_data_loaders(config: ExperimentConfig):
     """Build train and validation DataLoaders from the config.
+
+    For supervised setting: trains on labeled subset only.
+    For pseudo_label / uncertainty_filter: trains on labeled + pseudo-labeled
+    data using CombinedDataset.
 
     Returns:
         Tuple of (train_loader, val_loader).
@@ -95,8 +101,61 @@ def build_data_loaders(config: ExperimentConfig):
 
     train_subset = Subset(full_train_dataset, split_meta.labeled_indices)
 
+    # For pseudo-label / uncertainty settings, load pseudo-label artifacts
+    # and create a CombinedDataset
+    if config.pseudo_label.enabled and config.setting in (
+        "pseudo_label", "uncertainty_filter"
+    ):
+        artifact_dir = os.path.join(
+            config.output_dir,
+            "pseudo_labels",
+            config.setting,
+            f"{config.split.labeled_ratio}_{config.split.seed}",
+        )
+        pseudo_csv = os.path.join(artifact_dir, "pseudo_labels.csv")
+
+        if os.path.isfile(pseudo_csv):
+            logger.info("Loading pseudo-label artifacts from %s", pseudo_csv)
+            pseudo_df = load_pseudo_label_artifact(pseudo_csv)
+
+            # Add image_path column from the unlabeled subset
+            unlabeled_paths = [
+                full_train_dataset.image_paths[i]
+                for i in split_meta.unlabeled_indices
+            ]
+            # Map sample_index to image_path
+            idx_to_path = {
+                idx: path
+                for idx, path in zip(
+                    split_meta.unlabeled_indices, unlabeled_paths
+                )
+            }
+            pseudo_df["image_path"] = pseudo_df["sample_index"].map(idx_to_path)
+
+            train_dataset = CombinedDataset(
+                labeled_dataset=train_subset,
+                pseudo_label_df=pseudo_df,
+                label_set=config.data.label_set,
+                transform=train_transform,
+                image_root=config.data.dataset_path,
+            )
+            logger.info(
+                "Using CombinedDataset: %d labeled + %d pseudo-labeled",
+                len(train_subset),
+                len(pseudo_df),
+            )
+        else:
+            logger.warning(
+                "Pseudo-label artifacts not found at %s. "
+                "Training on labeled data only.",
+                pseudo_csv,
+            )
+            train_dataset = train_subset
+    else:
+        train_dataset = train_subset
+
     train_loader = DataLoader(
-        train_subset,
+        train_dataset,
         batch_size=config.training.batch_size,
         shuffle=True,
         num_workers=config.data.num_workers,
@@ -151,7 +210,7 @@ def main(argv=None):
     set_all_seeds(config.split.seed)
 
     # Device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     logger.info("Using device: %s", device)
 
     # Build model

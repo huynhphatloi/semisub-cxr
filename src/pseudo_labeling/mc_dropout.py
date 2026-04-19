@@ -8,6 +8,7 @@ Validates: Requirements 6.1, 6.2, 6.6, 6.7, 6.8
 """
 
 import logging
+import time
 from typing import Tuple
 
 import numpy as np
@@ -107,13 +108,16 @@ def run_mc_dropout_inference(
     all_indices = []
     # mc_probs_list[t] will be a list of batch arrays for pass t
     mc_probs_list: list = []
+    num_batches = len(dataloader)
+    start = time.time()
 
     for t in range(num_passes):
+        pass_start = time.time()
         pass_probs = []
         pass_indices = [] if t == 0 else None
 
         with torch.no_grad():
-            for batch in dataloader:
+            for batch_idx, batch in enumerate(dataloader):
                 images, _labels, indices = batch[0], batch[1], batch[2]
                 images = images.to(device)
 
@@ -128,6 +132,15 @@ def run_mc_dropout_inference(
         if t == 0:
             all_indices = np.concatenate(pass_indices, axis=0)
 
+        pass_time = time.time() - pass_start
+        elapsed = time.time() - start
+        eta = elapsed / (t + 1) * (num_passes - t - 1)
+        logger.info(
+            "  MC Dropout pass [%d/%d] done in %.0fs | "
+            "elapsed=%.0fs ETA=%.0fs (%.1fmin)",
+            t + 1, num_passes, pass_time, elapsed, eta, eta / 60,
+        )
+
     # Stack into (T, N, C)
     mc_probs = np.stack(mc_probs_list, axis=0)
 
@@ -137,13 +150,16 @@ def run_mc_dropout_inference(
     # Compute uncertainty
     uncertainties = compute_predictive_entropy(mc_probs)
 
+    total_time = time.time() - start
     logger.info(
         "MC Dropout inference complete: %d passes, %d samples, %d classes, "
-        "metric=%s",
+        "metric=%s, total=%.1fs (%.1fmin)",
         num_passes,
         mean_probabilities.shape[0],
         mean_probabilities.shape[1],
         uncertainty_metric,
+        total_time,
+        total_time / 60,
     )
 
     return all_indices, mean_probabilities, uncertainties

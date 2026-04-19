@@ -63,7 +63,7 @@ def main() -> None:
     if args.device:
         device = torch.device(args.device)
     else:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     logger.info("Using device: %s", device)
 
     # Evaluate
