@@ -14,6 +14,7 @@ from typing import Tuple
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.cuda.amp import autocast
 from torch.utils.data import DataLoader
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,8 @@ def run_mc_dropout_inference(
 
     _enable_dropout(model)
 
+    use_amp = device.type == "cuda"
+
     # First pass: collect indices and determine shapes
     all_indices = []
     # mc_probs_list[t] will be a list of batch arrays for pass t
@@ -119,12 +122,13 @@ def run_mc_dropout_inference(
         with torch.no_grad():
             for batch_idx, batch in enumerate(dataloader):
                 images, _labels, indices = batch[0], batch[1], batch[2]
-                images = images.to(device)
+                images = images.to(device, non_blocking=True)
 
-                logits = model(images)
-                probs = torch.sigmoid(logits)
+                with autocast(enabled=use_amp):
+                    logits = model(images)
+                    probs = torch.sigmoid(logits)
 
-                pass_probs.append(probs.cpu().numpy())
+                pass_probs.append(probs.float().cpu().numpy())
                 if t == 0:
                     pass_indices.append(indices.cpu().numpy())
 

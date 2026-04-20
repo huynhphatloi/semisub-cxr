@@ -13,6 +13,7 @@ from typing import Tuple
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.cuda.amp import autocast
 from torch.utils.data import DataLoader
 
 logger = logging.getLogger(__name__)
@@ -30,17 +31,19 @@ def run_teacher_inference(
     num_batches = len(dataloader)
     log_interval = max(1, num_batches // 20)  # Log ~20 times
     start = time.time()
+    use_amp = device.type == "cuda"
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(dataloader):
             images, _labels, indices = batch[0], batch[1], batch[2]
-            images = images.to(device)
+            images = images.to(device, non_blocking=True)
 
-            logits = model(images)
-            probs = torch.sigmoid(logits)
+            with autocast(enabled=use_amp):
+                logits = model(images)
+                probs = torch.sigmoid(logits)
 
             all_indices.append(indices.cpu().numpy())
-            all_probs.append(probs.cpu().numpy())
+            all_probs.append(probs.float().cpu().numpy())
 
             if (batch_idx + 1) % log_interval == 0 or (batch_idx + 1) == num_batches:
                 pct = 100.0 * (batch_idx + 1) / num_batches

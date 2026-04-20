@@ -160,6 +160,8 @@ def build_data_loaders(config: ExperimentConfig):
         shuffle=True,
         num_workers=config.data.num_workers,
         pin_memory=True,
+        persistent_workers=config.data.num_workers > 0,
+        prefetch_factor=2 if config.data.num_workers > 0 else None,
     )
     val_loader = DataLoader(
         val_dataset,
@@ -167,6 +169,8 @@ def build_data_loaders(config: ExperimentConfig):
         shuffle=False,
         num_workers=config.data.num_workers,
         pin_memory=True,
+        persistent_workers=config.data.num_workers > 0,
+        prefetch_factor=2 if config.data.num_workers > 0 else None,
     )
 
     return train_loader, val_loader
@@ -212,6 +216,10 @@ def main(argv=None):
     # Device
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     logger.info("Using device: %s", device)
+
+    # Enable cuDNN auto-tuner for faster convolutions
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
 
     # Build model
     model = build_model(config)

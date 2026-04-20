@@ -17,6 +17,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from sklearn.metrics import roc_auc_score
+from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 
 from src.config import ExperimentConfig
@@ -59,6 +60,10 @@ class Trainer:
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.device = device
+
+        # Mixed precision training (AMP)
+        self.use_amp = device.type == "cuda"
+        self.scaler = GradScaler(enabled=self.use_amp)
 
         # Optimizer
         self.optimizer = self._create_optimizer()
@@ -196,17 +201,20 @@ class Trainer:
 
         for batch_idx, batch in enumerate(self.train_loader):
             images, labels, loss_mask = self._unpack_batch(batch)
-            images = images.to(self.device)
-            labels = labels.to(self.device)
+            images = images.to(self.device, non_blocking=True)
+            labels = labels.to(self.device, non_blocking=True)
             if loss_mask is not None:
-                loss_mask = loss_mask.to(self.device)
+                loss_mask = loss_mask.to(self.device, non_blocking=True)
 
-            logits = self.model(images)
-            loss = masked_bce_with_logits(logits, labels, loss_mask)
+            self.optimizer.zero_grad(set_to_none=True)
 
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
+            with autocast(enabled=self.use_amp):
+                logits = self.model(images)
+                loss = masked_bce_with_logits(logits, labels, loss_mask)
+
+            self.scaler.scale(loss).backward()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
 
             total_loss += loss.item()
 
@@ -244,11 +252,12 @@ class Trainer:
         with torch.no_grad():
             for batch_idx, batch in enumerate(self.val_loader):
                 images, labels = batch[0], batch[1]
-                images = images.to(self.device)
-                logits = self.model(images)
-                probs = torch.sigmoid(logits)
+                images = images.to(self.device, non_blocking=True)
+                with autocast(enabled=self.use_amp):
+                    logits = self.model(images)
+                    probs = torch.sigmoid(logits)
                 all_labels.append(labels.cpu().numpy())
-                all_probs.append(probs.cpu().numpy())
+                all_probs.append(probs.float().cpu().numpy())
 
         logger.info("  Epoch %d val: %d batches done", epoch, num_batches)
 

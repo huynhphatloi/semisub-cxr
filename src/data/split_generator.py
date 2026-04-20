@@ -149,8 +149,13 @@ def generate_split(
     if os.path.isfile(path):
         logger.info("Loading existing split from %s", path)
         meta = _load_split(path)
-        _validate_split(meta, n_samples)
-        return meta
+        try:
+            _validate_split(meta, n_samples)
+            return meta
+        except ValueError as exc:
+            logger.warning(
+                "Cached split at %s is invalid (%s). Regenerating.", path, exc
+            )
 
     # --- Generate a new split with retry logic ---------------------------
     for attempt in range(_MAX_RETRIES):

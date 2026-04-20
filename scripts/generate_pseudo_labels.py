@@ -93,6 +93,8 @@ def build_unlabeled_loader(config: ExperimentConfig) -> DataLoader:
         shuffle=False,
         num_workers=config.data.num_workers,
         pin_memory=True,
+        persistent_workers=config.data.num_workers > 0,
+        prefetch_factor=2 if config.data.num_workers > 0 else None,
     )
     return loader
 
@@ -154,6 +156,9 @@ def main(argv=None):
     set_all_seeds(config.split.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     logger.info("Using device: %s", device)
+
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
 
     # Build teacher model
     model = build_teacher_model(config, args.teacher_checkpoint, device)

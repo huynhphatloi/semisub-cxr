@@ -9,7 +9,7 @@ data:
   uncertain_policy: "zeros"
   view_policy: "frontal_only"
   image_size: 224
-  num_workers: 2
+  num_workers: 4
 
 split:
   labeled_ratio: 0.05
@@ -27,7 +27,7 @@ model:
 
 training:
   learning_rate: 0.0001
-  batch_size: 32
+  batch_size: 128
   num_epochs: 30
   optimizer: "adam"
   weight_decay: 0.0001
