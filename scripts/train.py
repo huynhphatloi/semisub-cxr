@@ -193,6 +193,20 @@ def save_config_copy(config: ExperimentConfig) -> None:
     logger.info("Config saved to %s", config_path)
 
 
+def _find_last_checkpoint(config):
+    """Auto-detect last_checkpoint.pt for resume after disconnect."""
+    ckpt_dir = os.path.join(
+        config.output_dir,
+        "checkpoints",
+        config.setting,
+        f"{config.split.labeled_ratio}_{config.split.seed}",
+    )
+    last_path = os.path.join(ckpt_dir, "last_checkpoint.pt")
+    if os.path.isfile(last_path):
+        return last_path
+    return None
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Train a multi-label CXR classifier."
@@ -203,12 +217,27 @@ def main(argv=None):
         required=True,
         help="Path to the YAML experiment config file.",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        default=False,
+        help="Auto-resume from last_checkpoint.pt if it exists.",
+    )
     args = parser.parse_args(argv)
 
     # Load config
     config = load_config(args.config)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     logger.info("Loaded config: %s", config.experiment_name)
+
+    # Auto-resume: find last checkpoint
+    if args.resume and config.training.resume_checkpoint is None:
+        last_ckpt = _find_last_checkpoint(config)
+        if last_ckpt:
+            config.training.resume_checkpoint = last_ckpt
+            logger.info("Auto-resume enabled: found %s", last_ckpt)
+        else:
+            logger.info("Auto-resume: no checkpoint found, training from scratch.")
 
     # Set seeds
     set_all_seeds(config.split.seed)
@@ -227,10 +256,11 @@ def main(argv=None):
     # Build data loaders
     train_loader, val_loader = build_data_loaders(config)
 
-    # Sanity check: single training step
-    sample_batch = next(iter(train_loader))
-    images, labels = sample_batch[0], sample_batch[1]
-    check_training_step(model, (images, labels), device)
+    # Sanity check: single training step (skip if resuming)
+    if config.training.resume_checkpoint is None:
+        sample_batch = next(iter(train_loader))
+        images, labels = sample_batch[0], sample_batch[1]
+        check_training_step(model, (images, labels), device)
 
     # Save config copy
     save_config_copy(config)
